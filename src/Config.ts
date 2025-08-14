@@ -1,0 +1,5 @@
+export const ip_db = "http://localhost:9000"
+export const ip_this = "http://localhost:3000"
+export const ip_404 = "http://localhost:3000/404"
+export const phone_number = "+79313224412"
+export const email = "rtablesai@inbox.ru"
