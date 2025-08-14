@@ -1,0 +1,15 @@
+{
+  "files": {
+    "main.css": "/RTables/static/css/main.35aa6f04.css",
+    "main.js": "/RTables/static/js/main.9988eef5.js",
+    "static/js/453.ef879ff9.chunk.js": "/RTables/static/js/453.ef879ff9.chunk.js",
+    "index.html": "/RTables/index.html",
+    "main.35aa6f04.css.map": "/RTables/static/css/main.35aa6f04.css.map",
+    "main.9988eef5.js.map": "/RTables/static/js/main.9988eef5.js.map",
+    "453.ef879ff9.chunk.js.map": "/RTables/static/js/453.ef879ff9.chunk.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.35aa6f04.css",
+    "static/js/main.9988eef5.js"
+  ]
+}
