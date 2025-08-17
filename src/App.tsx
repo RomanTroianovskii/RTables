@@ -5,7 +5,7 @@ import './App.css';
 import { insertData, getData, Table, DelData } from "./Utils/SQLUtils";
 import { ip_404, ip_this } from './Config';
 import { login, isAuthenticated, register } from './Utils/AuthUtils';
-import { Routes, Route, data, BrowserRouter } from 'react-router-dom';
+import { Routes, Route, data, HashRouter } from 'react-router-dom';
 import Header from './Header';
 import LastTables from './LastTables';
 import { setStorageByHref } from './data';

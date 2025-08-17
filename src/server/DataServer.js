@@ -1,143 +1,188 @@
 const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
-const cors = require('cors');
+const sqlite3 = require('sqlite3');
+const { open } = require('sqlite');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const fs = require('fs');
 
 const app = express();
-const port = 3001;
+const port = 9000;
+const addr = "localhost"
+let db;
 
-// Middleware
-app.use(cors());
+app.use(function(req, res, next) {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+  next();
+});
+
+function initDatabase() {
+  open({
+    filename: './Data.db',
+    driver: sqlite3.Database
+  })
+    .then((database) => {
+      db = database;
+      console.log('Подключение к базе данных успешно');
+
+      // Создаем таблицу пользователей, если она не существует
+      console.log('Создание таблицы users...');
+      return db.exec(`
+        CREATE TABLE IF NOT EXISTS users (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          username TEXT UNIQUE NOT NULL,
+          password TEXT NOT NULL
+        )
+      `);
+    })
+    .then(() => {
+      console.log('Таблица users успешно создана');
+      app.listen(port, addr, () => {
+        console.log(`Сервер запущен на порту ${port}`);
+      });
+    })
+    .catch((error) => {
+      console.error('Ошибка инициализации базы данных:', error);
+      console.error('Детали ошибки:', {
+        message: error.message,
+        stack: error.stack,
+        code: error.code
+      });
+    });
+}
+
+// Middleware для обработки JSON
 app.use(express.json());
 
-// Database setup
-const db = new sqlite3.Database('Data.db', (err) => {
-    if (err) {
-        console.error('Error opening database:', err);
-    } else {
-        console.log('Connected to database');
-        // Create tables if they don't exist
-        db.run(`CREATE TABLE IF NOT EXISTS TABLES (
-            ID INTEGER PRIMARY KEY,
-            NAME TEXT,
-            CONTENT TEXT
-        )`);
-        
-        db.run(`CREATE TABLE IF NOT EXISTS Users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )`);
-    }
-});
+// Эндпоинт для регистрации
 
-// JWT secret
-const JWT_SECRET = 'your-secret-key'; // In production, use environment variable
-
-// Middleware to verify JWT token
-const authenticateToken = (req, res, next) => {
-    const token = req.headers['authorization']?.split(' ')[1];
-    
-    if (!token) {
-        return res.status(401).json({ error: 'No token provided' });
-    }
-
-    jwt.verify(token, JWT_SECRET, (err, user) => {
-        if (err) {
-            return res.status(403).json({ error: 'Invalid token' });
-        }
-        req.user = user;
-        next();
-    });
-};
-
-// Registration endpoint
+app.post('/deluser', async (req, res) => {
+  try
+  {
+    const { username } = req.body;
+    console.log(username)
+    await db.run(
+      `DELETE FROM users WHERE username = '${username}'`
+    )
+    return res.json({message: 'OK'})
+  } catch(e)
+  {
+    console.log(`Error while deliting user: ${e}` )
+    return res.status(400).json({ error: `Ошибка при удалении пользователя, ${e}`})
+  }
+})
 app.post('/register', async (req, res) => {
-    const { username, password } = req.body;
-    
-    if (!username || !password) {
-        return res.status(400).json({ error: 'Username and password are required' });
-    }
+  const { username, password } = req.body;
+  
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Имя пользователя и пароль обязательны' });
+  }
 
-    try {
-        const hashedPassword = await bcrypt.hash(password, 10);
-        
-        db.run('INSERT INTO Users (username, password_hash) VALUES (?, ?)',
-            [username, hashedPassword],
-            function(err) {
-                if (err) {
-                    if (err.message.includes('UNIQUE constraint failed')) {
-                        return res.status(400).json({ error: 'Username already exists' });
-                    }
-                    return res.status(500).json({ error: 'Error creating user' });
-                }
-                res.status(201).json({ message: 'User created successfully' });
-            }
-        );
-    } catch (error) {
-        res.status(500).json({ error: 'Error creating user' });
+  try {
+    console.log('Начало регистрации пользователя:', username);
+    
+    // Хешируем пароль
+    const hashedPassword = await bcrypt.hash(password, 10);
+    console.log('Пароль успешно захеширован');
+    
+    // Сохраняем пользователя в базу данных
+    await db.run(
+      'INSERT INTO users (username, password) VALUES (?, ?)',
+      [username, hashedPassword]
+    );
+    
+    console.log('Пользователь успешно добавлен в базу данных');
+    res.json({ message: 'Регистрация успешна' });
+  } catch (error) {
+    console.error('Ошибка при регистрации:', error);
+    console.error('Детали ошибки:', {
+      message: error.message,
+      stack: error.stack,
+      code: error.code
+    });
+    
+    if (error.message.includes('UNIQUE constraint failed')) {
+      res.status(400).json({ error: 'Пользователь с таким именем уже существует' });
+    } else {
+      res.status(500).json({ 
+        error: 'Ошибка при регистрации',
+        details: error.message 
+      });
     }
+  }
 });
 
-// Login endpoint
+// Эндпоинт для авторизации
 app.post('/auth', async (req, res) => {
-    const { username, password } = req.body;
+  const { username, password } = req.body;
+  
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Имя пользователя и пароль обязательны' });
+  }
+
+  try {
+    // Получаем пользователя из базы данных
+    const user = await db.get('SELECT * FROM users WHERE username = ?', [username]);
     
-    if (!username || !password) {
-        return res.status(400).json({ error: 'Username and password are required' });
+    if (!user) {
+      return res.status(401).json({ error: 'Неверное имя пользователя или пароль' });
     }
 
-    db.get('SELECT * FROM Users WHERE username = ?', [username], async (err, user) => {
-        if (err) {
-            return res.status(500).json({ error: 'Error during login' });
-        }
-        
-        if (!user) {
-            return res.status(401).json({ error: 'Invalid credentials' });
-        }
+    // Проверяем пароль
+    const validPassword = await bcrypt.compare(password, user.password);
+    
+    if (!validPassword) {
+      return res.status(401).json({ error: 'Неверное имя пользователя или пароль' });
+    }
 
-        const validPassword = await bcrypt.compare(password, user.password_hash);
-        if (!validPassword) {
-            return res.status(401).json({ error: 'Invalid credentials' });
-        }
+    // Создаем JWT токен
+    const token = jwt.sign(
+      { userId: user.id, username: user.username },
+      JWT_SECRET,
+      { expiresIn: '24h' }
+    );
 
-        const token = jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '24h' });
-        res.json({ token, username: user.username });
+    res.json({
+      token,
+      username: user.username
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Ошибка при авторизации' });
+  }
+});
+
+// Обработчик GET-запросов (только SELECT)
+app.get('/query', (req, res) => {
+  const sqlQuery = req.query.sql;
+
+  if (!sqlQuery) {
+    return res.status(400).json({ error: 'SQL-запрос не указан' });
+  }
+
+  db.all(sqlQuery)
+    .then((rows) => {
+      res.json({ data: rows });
+    })
+    .catch((err) => {
+      res.status(500).json({ error: err.message });
     });
 });
 
-// Protected routes
-app.get('/query', authenticateToken, (req, res) => {
-    const { sql } = req.query;
-    if (!sql) {
-        return res.status(400).json({ error: 'SQL query is required' });
-    }
 
-    db.all(sql, [], (err, rows) => {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
-        res.json({ data: rows });
+app.post('/query', (req, res) => {
+  const { sql, params } = req.body;
+
+  if (!sql || !Array.isArray(params)) {
+    return res.status(400).json({ error: 'Некорректный формат запроса' });
+  }
+
+  db.run(sql, params)
+    .then((result) => {
+      res.json({ message: 'Запрос выполнен успешно', changes: result.changes });
+    })
+    .catch((err) => {
+      res.status(500).json({ error: err.message });
     });
 });
 
-app.post('/query', authenticateToken, (req, res) => {
-    const { sql, params } = req.body;
-    if (!sql) {
-        return res.status(400).json({ error: 'SQL query is required' });
-    }
 
-    db.run(sql, params, function(err) {
-        if (err) {
-            return res.status(500).json({ error: err.message });
-        }
-        res.json({ id: this.lastID });
-    });
-});
-
-app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
-}); 
+initDatabase();

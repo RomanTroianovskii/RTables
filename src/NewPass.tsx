@@ -8,7 +8,7 @@ function NewPass(props: { name: string }) {
     const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         console.log(newPass, confirmPass);
-        changePassword(newPass, props.name).then((result: boolean) => {console.log(`Result: ${result}`)})
+        changePassword(newPass, props.name).then((result: boolean) => {console.log(`Result: ${result}`);         localStorage.setItem("pass", newPass);})
     }
 
     return (

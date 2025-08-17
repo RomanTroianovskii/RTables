@@ -10,7 +10,6 @@ export let first: string = localStorage.getItem("prev1") || "null";
 export let second: string = localStorage.getItem("prev2") || "null";
 export let third: string = localStorage.getItem("prev3") || "null";
 
-
 export const setStorage = (_first: string, _second: string, _third: string) => {
     first = _first;
     second = _second;
