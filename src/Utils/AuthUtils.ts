@@ -1,9 +1,5 @@
-// AuthUtils file
-
-import { faSlash } from '@fortawesome/free-solid-svg-icons';
 import { ip_db, ip_this } from '../Config';
 import { CurrentUser } from '../data';
-import { resolve } from 'path';
 
 interface AuthToken {
     token: string;
@@ -13,112 +9,123 @@ interface AuthToken {
 
 let currentAuth: AuthToken | null = null;
 
-export function deleteUser(username: string): Promise<boolean>{
-    return new Promise((resolve) => {
-        const xhr = new XMLHttpRequest();
-        const url = `${ip_db}/deluser`;
-        
-        xhr.open("POST", url, false);
-        xhr.setRequestHeader("Content-Type", "application/json");
-
-        try
-        {
-            xhr.send(JSON.stringify({ username }));
-            console.log(xhr.status)
-            console.log(xhr.statusText)
-            resolve(true)
-        }
-        catch(e)
-        {
-            console.error("error while deliting a user")
-            resolve(false)
-        }
-    })
-}
-export function login(username: string, password: string): Promise<boolean> {
-    return new Promise((resolve) => {
-        const xhr = new XMLHttpRequest();
-        const url = `${ip_db}/auth`;
-        
-        xhr.open("POST", url, false);
-        xhr.setRequestHeader("Content-Type", "application/json");
-        
-        try {
-            console.log("Attempting to login at:", url);
-            xhr.send(JSON.stringify({ username, password }));
-            
-            if (xhr.status === 200) {
-                console.log("Login successful");
-                const response = JSON.parse(xhr.responseText);
-                currentAuth = {
-                    token: response.token,
-                    expires: Date.now() + (24 * 60 * 60 * 1000), // 24 часа
-                    username: response.username
-                };
-                localStorage.setItem('authToken', JSON.stringify(currentAuth));
-                resolve(true);
-            } else {
-                console.error("Login failed with status:", xhr.status);
-                console.error("Response:", xhr.responseText);
-                resolve(false);
-            }
-        } catch (error) {
-            console.error("Login error details:", error);
-            console.error("Server URL:", url);
-            resolve(false);
-        }
-    });
-}
-
-export function register(username: string, password: string): Promise<boolean> {
-    return new Promise((resolve) => {
-        const xhr = new XMLHttpRequest();
-        const url = `${ip_db}/register`;
-        
-        xhr.open("POST", url, false);
-        xhr.setRequestHeader("Content-Type", "application/json");
-        
-        try {
-            console.log("Attempting to register at:", url);
-            xhr.send(JSON.stringify({ username, password }));
-            
-            if (xhr.status === 200) {
-                console.log("Registration successful");
-                resolve(true);
-            } else {
-                console.error("Registration failed with status:", xhr.status);
-                console.error("Response:", xhr.responseText);
-                resolve(false);
-            }
-        } catch (error) {
-            console.error("Registration error details:", error);
-            console.error("Server URL:", url);
-            resolve(false);
-        }
-    });
-}
-
-export function changePassword(newPassword: string, username: string): Promise<boolean> {
-    return new Promise((resolve) => {
-        try{
-            console.log("Attempting to set new password")
-            deleteUser(username)
-            register(username, newPassword)
-            resolve(true)
-        }
-        catch(error)
-        {
-            console.error("Change password error details:", error);
-            resolve(false);
-        }
-    })
-}
-
-export function logout(): void {
+function clearAuthState(): void {
     currentAuth = null;
     localStorage.removeItem('authToken');
     localStorage.removeItem('username');
     localStorage.removeItem('pass');
+}
+
+async function postJson<T>(url: string, payload: unknown): Promise<{
+    ok: boolean;
+    status: number;
+    data: T | null;
+    text: string;
+}> {
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    });
+
+    const text = await response.text();
+    let data: T | null = null;
+
+    if (text) {
+        try {
+            data = JSON.parse(text) as T;
+        } catch {
+            data = null;
+        }
+    }
+
+    return {
+        ok: response.ok,
+        status: response.status,
+        data,
+        text
+    };
+}
+
+export async function deleteUser(username: string): Promise<boolean> {
+    const url = `${ip_db}/deluser`;
+
+    try {
+        const response = await postJson<{ message?: string; error?: string }>(url, { username });
+        console.log(response.status);
+        return response.ok;
+    } catch (error) {
+        console.error('Delete user error details:', error);
+        return false;
+    }
+}
+
+export async function login(username: string, password: string): Promise<boolean> {
+    const url = `${ip_db}/auth`;
+
+    try {
+        console.log('Attempting to login at:', url);
+        const response = await postJson<{ token?: string; username?: string; error?: string }>(url, { username, password });
+
+        if (response.ok && response.data?.token && response.data?.username) {
+            console.log('Login successful');
+            currentAuth = {
+                token: response.data.token,
+                expires: Date.now() + (24 * 60 * 60 * 1000),
+                username: response.data.username
+            };
+            localStorage.setItem('authToken', JSON.stringify(currentAuth));
+            return true;
+        }
+
+        console.error('Login failed with status:', response.status);
+        console.error('Response:', response.text);
+        return false;
+    } catch (error) {
+        console.error('Login error details:', error);
+        console.error('Server URL:', url);
+        return false;
+    }
+}
+
+export async function register(username: string, password: string): Promise<boolean> {
+    const url = `${ip_db}/register`;
+
+    try {
+        console.log('Attempting to register at:', url);
+        const response = await postJson<{ message?: string; error?: string }>(url, { username, password });
+
+        if (response.ok) {
+            console.log('Registration successful');
+            return true;
+        }
+
+        console.error('Registration failed with status:', response.status);
+        console.error('Response:', response.text);
+        return false;
+    } catch (error) {
+        console.error('Registration error details:', error);
+        console.error('Server URL:', url);
+        return false;
+    }
+}
+
+export async function changePassword(newPassword: string, username: string): Promise<boolean> {
+    try {
+        console.log('Attempting to set new password');
+        await deleteUser(username);
+        await register(username, newPassword);
+        return true;
+    } catch (error) {
+        console.error('Change password error details:', error);
+        return false;
+    }
+}
+
+export function logout(): void {
+    clearAuthState();
     window.location.href = `${ip_this}/`;
 }
 
@@ -132,12 +139,12 @@ export function isAuthenticated(): boolean {
             }
         }
     }
-    
+
     if (currentAuth && currentAuth.expires > Date.now()) {
         return true;
     }
-    
-    logout();
+
+    clearAuthState();
     return false;
 }
 
@@ -153,4 +160,4 @@ export function getCurrentUsername(): string | null {
         return currentAuth.username;
     }
     return null;
-} 
+}
